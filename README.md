@@ -13,6 +13,6 @@ This project explored the viability of machine learning techniques to predict th
 - alter_df file refactor
 
 ### Intereste in More Details?
-See the final paper here: 
+Check out the final paper!
 
 
