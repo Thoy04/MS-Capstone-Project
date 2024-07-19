@@ -1,0 +1,231 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from imblearn.over_sampling import SMOTE
+from sklearn.preprocessing import MinMaxScaler
+
+# reading in data from excel file
+df = pd.read_csv('C:/Users/sierr/Desktop/MSDS/Capstone/NBA_Dataset_currentV3.csv')
+# looking at first few rows of data
+df.head()
+# taking a look at non-null values and column types for comparison purposes
+df.info()
+
+# updating counts so all are numeric, then updating type to float
+df.loc[df['fg2_pct'] == '#DIV/0!', 'fg2_pct'] = 0
+df['fg2_pct'] = df['fg2_pct'].astype('float64')
+
+# creating columns to check if a player received votes and if they won the award for comparison
+df['received_vote'] = df['award_share'].apply(lambda x: 1 if x > 0 else 0)
+winners = df.groupby(by="season").max('award_share')
+winners['won_mip'] = 1
+df = df.merge(winners[["award_share", "won_mip"]], on=["season", "award_share"], how="left")
+df["won_mip"] = df["won_mip"].fillna(value=0)
+
+# checking to make sure all correct values are returned
+winners_df = df[(df['won_mip'] == 1) & (df['season'] > 1986)].sort_values(by='season')
+
+# removing fga columns as they are calculated by fg/fg_pct
+plt.scatter(df["fga_per_g"], df["fg_per_g"] / df["fg_pct"])
+plt.xlabel("fg_per_g")
+plt.ylabel("fga_per_g / fg_pct")
+plt.title("FG Column Relationship")
+plt.show(block=True)
+
+# removing unnecessary columns, trb_per_g included
+df = df.drop(columns=["Unnamed: 0", "fga_per_g", "fg3a_per_g", "fg2a_per_g", "fta_per_g", "trb_per_g"], axis=1)
+
+
+# function form Sunderhaft kaggle notebook 2022
+def func(pct, allvals):
+    absolute = int(np.round(pct / 100. * np.sum(allvals)))
+    return "{:.1f}%/n({:d})".format(pct, absolute)
+
+
+# pie chart showing who received votes vs who did not
+plt.pie(df['received_vote'].value_counts(),
+        autopct=lambda pct: func(pct, df['received_vote'].value_counts()),
+        pctdistance=1.25)
+plt.title('Players that Received MIP votes (Complete Dataset)')
+plt.legend(['No Votes', 'Received Votes'])
+plt.show(block=True)
+
+# Under-Sampling by removing players who have no chance of winning
+
+# checking correlations to see what we could filter off of - diff columns have highest correlations
+corr_matrix = df.corr()
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
+plt.show(block=True)
+
+
+# function to make plot showing difference between those who received votes and did not
+def vote_diff_plot(col):
+    plt.hist(df[df['received_vote'] == 1][col], bins=10, alpha=0.7, density=True, label='Received Votes')
+    plt.hist(df[df['received_vote'] == 0][col], bins=10, alpha=0.7, density=True, label='No Votes')
+    plt.ylabel('Proportion')
+    plt.xlabel('Minutes Per Game Difference')
+    plt.legend(['Received Votes', 'No Votes'])
+    plt.title('Minutes Per Game Difference with Cutoff')
+    plt.axvline(x=mpgdiff_cutoff, color='black')
+    plt.show(block=True)
+
+
+# Going to check to see who has received votes by games played - looks like very few under 30 games
+vote_diff_plot('g')
+# checking vote receivers under 30 games - going to use 29 games to only remove Sean Elliot in 2000
+under_30 = df[(df['received_vote'] == 1) & (df['g'] < 29)]
+games_cutoff = 29
+
+# checking gs
+vote_diff_plot('gs')
+# checking vote receivers under 20 games started - not helpful as bench player can win
+under_20 = df[(df['received_vote'] == 1) & (df['gs'] < 20)]
+
+# checking mp_per_g
+vote_diff_plot('mp_per_g')
+# going to use 3 std from mean as it is approximately normal
+minutes_cutoff = df[df['received_vote'] == 1]['mp_per_g'].mean() - 3 * df[df['received_vote'] == 1]['mp_per_g'].std()
+# checking who is removed - removes 2 all with ~0 award share
+minutes_cutoff_df = df[(df['received_vote'] == 1) & (df['mp_per_g'] < minutes_cutoff)]
+
+# checking pts_per_g
+vote_diff_plot('pts_per_g')
+# going to use 3 std from mean as it is approximately normal
+points_cutoff = df[df['received_vote'] == 1]['pts_per_g'].mean() - 3 * df[df['received_vote'] == 1]['pts_per_g'].std()
+# checking who is removed - removes 0
+points_cutoff_df = df[(df['received_vote'] == 1) & (df['pts_per_g'] < points_cutoff)]
+
+# checking mpg_diff
+vote_diff_plot('mpg_diff')
+# going to use 3 std from mean as it is approximately normal
+mpgdiff_cutoff = df[df['received_vote'] == 1]['mpg_diff'].mean() - 3 * df[df['received_vote'] == 1]['mpg_diff'].std()
+# checking who is removed - removes 0
+mpgdiff_cutoff_df = df[(df['received_vote'] == 1) & (df['mpg_diff'] < mpgdiff_cutoff)]
+
+# checking ppg_diff
+vote_diff_plot('ppg_diff')
+# going to use 3 std from mean as it is approximately normal
+ppgdiff_cutoff = df[df['received_vote'] == 1]['ppg_diff'].mean() - 3 * df[df['received_vote'] == 1]['ppg_diff'].std()
+# checking who is removed - removes 4 with very small shares
+ppgdiff_cutoff_df = df[(df['received_vote'] == 1) & (df['ppg_diff'] < ppgdiff_cutoff)]
+
+# checking ast_diff
+vote_diff_plot('astpg_diff')
+# going to use 3 std from mean as it is approximately normal
+astdiff_cutoff = df[df['received_vote'] == 1]['astpg_diff'].mean() - 3 * df[df['received_vote'] == 1]['astpg_diff'].std()
+# checking who is removed - removes 1 with very small shares
+astdiff_cutoff_df = df[(df['received_vote'] == 1) & (df['astpg_diff'] < astdiff_cutoff)]
+
+# checking rebpg_diff
+vote_diff_plot('rebpg_diff')
+# going to use 3 std from mean as it is approximately normal
+rebpg_diff_cutoff = df[df['received_vote'] == 1]['rebpg_diff'].mean() - 3 * df[df['received_vote'] == 1]['rebpg_diff'].std()
+# checking who is removed - removes 0
+rebpg_diff_cutoff_df = df[(df['received_vote'] == 1) & (df['rebpg_diff'] < rebpg_diff_cutoff)]
+
+# checking tov_diff
+vote_diff_plot('tov_diff')
+# going to use 3 std from mean as it is approximately normal
+tov_diff_cutoff = df[df['received_vote'] == 1]['tov_diff'].mean() - 3 * df[df['received_vote'] == 1]['tov_diff'].std()
+# checking who is removed - removes 0
+tov_diff_cutoff_df = df[(df['received_vote'] == 1) & (df['tov_diff'] < tov_diff_cutoff)]
+
+# removing values based on cutoffs
+filtered_df = df[(df['g'] >= games_cutoff) & (df['mp_per_g'] >= minutes_cutoff) &
+                 (df['pts_per_g'] >= points_cutoff) & (df['mpg_diff'] >= mpgdiff_cutoff) &
+                 (df['ppg_diff'] >= ppgdiff_cutoff) & (df['astpg_diff'] >= astdiff_cutoff) &
+                 (df['rebpg_diff'] >= rebpg_diff_cutoff) & (df['tov_diff'] >= tov_diff_cutoff)]
+
+# removing all players with previous total > 0 and rows with null diff columns
+filtered_df = filtered_df[(filtered_df['previous_total'] == 0) & (filtered_df['mpg_diff'].notnull())]
+
+# separating numerical columns from categorical columns for graphs
+num_cols = [col for col in filtered_df.columns if
+            filtered_df[col].dtype == np.float64 or filtered_df[col].dtype == np.int64]
+cat_cols = [col for col in filtered_df.columns if
+            filtered_df[col].dtype != np.float64 and filtered_df[col].dtype != np.int64]
+
+pct_cols = [col for col in filtered_df.columns if 'pct' in col or 'award' in col]
+diff_cols = [col for col in num_cols if 'diff' in col]
+reg_cols = [col for col in num_cols if col not in pct_cols and col not in diff_cols and 'season' not in col]
+# Looking for clear outliers from descriptive stats
+stats = pd.DataFrame(filtered_df.describe())
+
+# checking numerical columns for outliers
+sns.boxplot(data=filtered_df[pct_cols])
+plt.xticks(rotation=30)
+plt.show(block=True)
+
+sns.boxplot(data=filtered_df[diff_cols])
+plt.xticks(rotation=30)
+plt.show(block=True)
+
+sns.boxplot(data=filtered_df[reg_cols])
+plt.xticks(rotation=90)
+plt.show(block=True)
+
+filtered_df['previous_mvp'].value_counts()
+filtered_df['previous_mip'].value_counts()
+filtered_df['previous_all_star'].value_counts()
+filtered_df['previous_all_nba'].value_counts()
+
+sns.pairplot(data=filtered_df[pct_cols])
+plt.show(block=True)
+
+sns.pairplot(data=filtered_df[diff_cols])
+plt.show(block=True)
+
+sns.pairplot(data=filtered_df[reg_cols[0:5]])
+plt.show(block=True)
+
+stats = []
+p_vals = []
+cols = []
+for col in pct_cols:
+    sns.distplot(filtered_df[col], kde=False, bins=10)
+    plt.title(f'Distribution of {col}')
+    plt.xlabel('Value')
+    plt.ylabel('Frequency')
+    plt.show(block=True)
+
+# filtering results in more balanced data, however it is still quite imbalanced
+plt.pie(filtered_df['received_vote'].value_counts(),
+        autopct=lambda pct: func(pct, filtered_df['received_vote'].value_counts()),
+        pctdistance=1.25)
+plt.title('Players that Received MIP Votes Post Filtering')
+plt.legend(['Received Votes', 'No Votes'])
+plt.show(block=True)
+
+# Using SMOTE to balance
+cols_to_drop = ['player', 'team_id', 'previous_mvp', 'previous_mip', 'previous_all_star', 'previous_all_nba',
+                'previous_total', 'season_diff', 'age_diff', 'received_vote', 'won_mip']
+smote_df = filtered_df.drop(cols_to_drop, axis=1)
+classes = filtered_df["award_share"] > .1
+sm = SMOTE(random_state=42)
+smote_df, classes = sm.fit_resample(smote_df, classes)
+# indexing synthetic data
+smote_df['is_synthetic'] = smote_df.index >= len(filtered_df)
+# creating dfs for modelling
+final_forest_df = smote_df.merge(filtered_df, how='left')
+scaler = MinMaxScaler()
+final_SVM_df = pd.DataFrame(scaler.fit_transform(smote_df))
+final_SVM_df.columns = scaler.get_feature_names_out()
+final_SVM_df = final_SVM_df.merge(filtered_df, how='left')
+final_forest_df.to_csv('C:/Users/sierr/Desktop/MSDS/Capstone/forest_df.csv')
+# kde plot before and after smote
+sns.kdeplot(filtered_df['award_share'], label="Original")
+sns.kdeplot(smote_df['award_share'], label="Post SMOTE")
+plt.legend()
+plt.title("KDE Plot of Award Share of Original Data vs After SMOTE")
+plt.show(block=True)
+# post smote balance
+plt.pie(classes.value_counts(),
+        autopct=lambda pct: func(pct, classes.value_counts()),
+        pctdistance=.25)
+plt.title('Players that Received MIP Votes Post SMOTE')
+plt.legend(['Received Votes', 'No Votes'])
+plt.show(block=True)
+
+
+
