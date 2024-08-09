@@ -12,7 +12,7 @@ This project explored the viability of machine learning techniques to predict th
 - modellingV1 file refactor
 - alter_df file refactor
 
-### Intereste in More Details?
+### Interested in More Details?
 Check out the final paper!
 
 
